@@ -2,6 +2,8 @@ import math
 import random
 
 import random as r
+from traceback import print_tb
+
 import matplotlib.pyplot as plt
 import math as m
 
@@ -12,11 +14,11 @@ perturbationChance = 0.1
 maxPerturbation = 100
 perturbationTTL = 3
 CPUAmount = 5
-iterationAmount = 300
+iterationAmount = 500
 minCPUAmount = 1
 maxCPUAmount = 8
 maxRequestPerCPU = 3100
-maxRPS = 0.15*maxRequestPerCPU # In Kips
+maxRPS = 0.25*maxRequestPerCPU # In Mips
 t=0
 error = 0
 transitionaryState = True
@@ -58,7 +60,6 @@ def requestForCPU(requestAmount):
 
 def GenerateRequests():
     requestAmount = round(r.random()*maxRPS)
-    print("Se generaron: " + str(requestAmount))
     return requestForCPU(requestAmount)
 
 def CalculateUsage(cpu:CPU):
@@ -81,14 +82,12 @@ def refreshCPUs(requests,perturbations:Perturbation):
 
 
 def loadbalancer(error): #If a Heavy query is executed it will stay on the CPU that's managing it
-    print("entered with error: " + str(error))
     global transitionaryState
     if abs(error) <= 15 & transitionaryState:
         transitionaryState = False
-        print("Entro al <= 15")
     if abs(error) > 25:
         if not transitionaryState:
-            print("The system reached failure state! Aborting")
+            print("El sistema llego al estado de fallo! Abortando...")
             return 1
     if 15 <= abs(error) <= 25:# Need to add or delete a CPU
         totalError = error * len(CPUs) # Total excess
@@ -98,23 +97,25 @@ def loadbalancer(error): #If a Heavy query is executed it will stay on the CPU t
             for x in range(abs(CPUdifference)):
                 if len(CPUs) > minCPUAmount:
                     CPUs.pop()
-                else: print("Minimum CPU amount of  ("+ str(minCPUAmount) +") reached! no more CPUs will be deactivated"); break;
+                else: #print("Minimum CPU amount of  ("+ str(minCPUAmount) +") reached! no more CPUs will be deactivated");
+                    break
         else:
             for x in range(abs(CPUdifference)):
                 if len(CPUs) < maxCPUAmount:
                     newCPU = CPU(0,0,0)
                     CPUs.append(newCPU)
-                else: print("Maximum CPU amount of  ("+ str(maxCPUAmount) +") reached! no more CPUs will be activated"); break;
+                else: #print("Maximum CPU amount of  ("+ str(maxCPUAmount) +") reached! no more CPUs will be activated");
+                    break
         CPURequest = requestForCPU(ActiveRequests) # Divide the request between the new amount of CPUs
         refreshCPUs(CPURequest,Perturbation(0,0))
     return 0
 
 while t<iterationAmount:
-
+    print('Tiempo: ' + str(t))
     # 30% of the time a random amount of requests is deleted
+    deletedRequest=0
     if (not transitionaryState) & (r.random()< 0.5):
         deletedRequest = round(CPUs[0].activeRequests*r.random()*0.1)# Delete a random amount of requests up to 60% of the active requests
-        print("deleted: "+str(deletedRequest))
         for C in CPUs:
             C.activeRequests = max(C.activeRequests - deletedRequest, 0)
 
@@ -122,15 +123,15 @@ while t<iterationAmount:
 
     if (not transitionaryState) & (r.random() < perturbationChance):
         perturbation = Perturbation(math.ceil(r.random()*maxPerturbation),math.ceil(r.random()*perturbationTTL))
-        print('Se genero una perturbacion, TTL: '+str(perturbation.TTL)+' valor: '+str(perturbation.requests) )
+        print('Se produjo una perturbacion, TTL: '+str(perturbation.TTL)+' valor: '+str(perturbation.requests) +' Mips')
     else:
         perturbation = Perturbation(0,0)
     # Generate the incoming requests in this t
     if transitionaryState:
-        requestPerCPU = min(0.25*maxRequestPerCPU + requestForCPU(totalRequests()), maxRequestPerCPU)
+        req = 0.25*maxRequestPerCPU
     else:
-        requestPerCPU = min(GenerateRequests() + requestForCPU(totalRequests()),maxRequestPerCPU)
-    print('gen requests: '+str(requestPerCPU))
+        req = GenerateRequests()
+    requestPerCPU = min(req + requestForCPU(totalRequests()),maxRequestPerCPU)
     #Refresh the CPUs
     refreshCPUs(requestPerCPU,perturbation)
 
@@ -146,63 +147,65 @@ while t<iterationAmount:
 
     #Balance the charge
     balanceResult = loadbalancer(calculatedError)
-    usage.append(CPUs[0].usage)
+    usage.append(round(CPUs[0].usage*100,2))
     lengths.append(len(CPUs))
     requestsList.append(CPUs[0].activeRequests)
     perturbations.append(sum(p.requests for p in CPUs[0].perturbations))
 
-    print("CPU len: " + str(len(CPUs)))
-    print("uso: "+str(CPUs[0].usage))
     time.append(t)
     if (not transitionaryState) & balanceResult == 1 :
-        print("breaks here")
         break
 
 
 
-    print(t)
+    print('Cantidad de servidores: ' + str(len(CPUs)) + ' - Porcentaje de uso: ' + str(round(CPUs[0].usage*100,2)) + '% - Señal de error: ' + str(round(calculatedError,2)))
+    print('Request entrantes: ' + str(req) + ' Mips por servidor - Request eliminadas: ' + str(deletedRequest)+' Mips por servidor')
+
     print('=======================================================================================')
     t += 1
 # CPU Usage
-custom_ticks = [0,0.25,0.35,0.5,0.65,0.75,1]
-plt.figure(figsize=(10, 6))
-plt.plot(time, usage, label="CPU Usage (%)", color="blue", linewidth=0.5)
-plt.axhline(y=0.5, color='green', linestyle='-', linewidth=0.75)
-plt.axhline(y=0.65, color='blue', linestyle='--', linewidth=0.75)
-plt.axhline(y=0.35, color='blue', linestyle='--', linewidth=0.75)
-plt.axhline(y=0.75, color='red', linestyle=':', linewidth=0.75)
-plt.axhline(y=0.25, color='red', linestyle=':', linewidth=0.75)
-plt.title("CPU Usage Over Time")
-plt.xlabel("Time ")
+custom_ticks = [0,25,35,50,65,75,100]
+plt.figure(figsize=(20, 6))
+plt.plot(time, usage, label="Uso del CPU [%]", color="blue", linewidth=0.5)
+plt.axhline(y=50, color='green', linestyle='-', linewidth=0.75)
+plt.axhline(y=65, color='blue', linestyle='--', linewidth=0.75)
+plt.axhline(y=35, color='blue', linestyle='--', linewidth=0.75)
+plt.axhline(y=75, color='red', linestyle=':', linewidth=0.75)
+plt.axhline(y=25, color='red', linestyle=':', linewidth=0.75)
+plt.title("Uso del CPU en el tiempo")
+plt.xlabel("Tiempo [seg]")
 plt.ylim(0, 1)
 plt.yticks(custom_ticks)
-plt.ylabel("CPU Usage (%)")
+plt.ylabel("Uso del CPU [%]")
 plt.grid(True)
 plt.legend()
 plt.show()
 # CPU amount
-plt.plot(time, lengths, label="List Length", color="green")
-plt.xlabel("Time")
-plt.ylim(0, maxCPUAmount)
-plt.ylabel("Number of Elements")
-plt.title("Growth of List Over Time")
+plt.figure(figsize=(20, 6))
+plt.plot(time, lengths, label="Cantidad de CPUs", color="green")
+plt.xlabel("Tiempo [seg]")
+plt.ylim(0, maxCPUAmount + 2)
+plt.ylabel("Número de CPUs activas [Unidades]")
+plt.title("Variación de CPUs en el tiempo")
 plt.grid(True)
 plt.legend()
 plt.show()
 # Requests and perturbations
-plt.plot(time, requestsList, label="Number of Requests", color="blue")
-plt.xlabel("Time Points")
-plt.ylim(0, maxRequestPerCPU)
-plt.ylabel("Count")
-plt.title("Requests Over Time")
+plt.figure(figsize=(20, 6))
+plt.plot(time, requestsList, label="Cantidad de requests", color="blue")
+plt.xlabel("Tiempo [seg]")
+plt.ylim(0, maxRequestPerCPU+1)
+plt.ylabel("Cantidad")
+plt.title("Requests en el tiempo")
 plt.grid(True)
 plt.legend()
 plt.show()
 # Perturbations
-plt.plot(time, perturbations, label="Number of Perturbations", color="red")
-plt.xlabel("Time Points")
-plt.ylabel("Count")
-plt.title("Perturbations Over Time")
+plt.figure(figsize=(20, 6))
+plt.plot(time, perturbations, label="Cantidad de requests de perturbaciones", color="red")
+plt.xlabel("Tiempo [seg]")
+plt.ylabel("Cantidad de request de las perturbaciones")
+plt.title("Perturbaciones en el tiempo")
 plt.grid(True)
 plt.legend()
 plt.show()
