@@ -7,7 +7,7 @@ from traceback import print_tb
 import matplotlib.pyplot as plt
 import math as m
 
-input = 50
+respuestaValorNominal = 50
 maxPowerConsumption = 575
 maxSpeed = 3.1 # In Ghz
 perturbationChance = 0.1
